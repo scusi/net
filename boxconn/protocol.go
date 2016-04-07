@@ -2,7 +2,7 @@ package boxconn
 
 import (
 	"bytes"
-	"code.google.com/p/go-uuid/uuid"
+	"github.com/pborman/uuid"
 	"golang.org/x/crypto/nacl/box"
 	"encoding/binary"
 	"fmt"
