@@ -4,15 +4,16 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/badgerodon/net/socketmaster/protocol"
 	"github.com/hashicorp/yamux"
+	"github.com/scusi/net/boxconn"
+	"github.com/scusi/socketmaster/protocol"
 )
 
 // Listen connects to the socket master, binds a port, and accepts
 // multiplexed traffic as new connections
-func Listen(socketMasterAddress string, socketDefinition protocol.SocketDefinition) (net.Listener, error) {
+func Listen(socketMasterAddress string, socketDefinition protocol.SocketDefinition, priv, pub [32]byte, allowedKeys ...[32]byte) (net.Listener, error) {
 	// connect to the socket master
-	conn, err := net.Dial("tcp", socketMasterAddress)
+	conn, err := boxconn.Dial("tcp", socketMasterAddress, priv, pub, allowedKeys)
 	if err != nil {
 		return nil, err
 	}
