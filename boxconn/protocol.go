@@ -2,10 +2,11 @@ package boxconn
 
 import (
 	"bytes"
-	"code.google.com/p/go-uuid/uuid"
-	"golang.org/x/crypto/nacl/box"
 	"encoding/binary"
 	"fmt"
+	"github.com/google/uuid"
+	"golang.org/x/crypto/nacl/box"
+	"log"
 	"math/rand"
 )
 
@@ -17,9 +18,9 @@ const (
 
 type (
 	Protocol struct {
-		reader             Reader
-		writer             Writer
-		myNonce, peerNonce [nonceSize]byte
+		reader                                    Reader
+		writer                                    Writer
+		myNonce, peerNonce                        [nonceSize]byte
 		privateKey, publicKey, peerKey, sharedKey [keySize]byte
 	}
 	Message struct {
@@ -48,8 +49,9 @@ var zeroNonce [nonceSize]byte
 // Generate a nonce: timestamp (uuid) + random
 func generateNonce() [nonceSize]byte {
 	var nonce [nonceSize]byte
-	copy(nonce[:16], uuid.NewUUID())
+	copy(nonce[:16], uuid.New().String())
 	binary.BigEndian.PutUint64(nonce[16:], uint64(rand.Int63()))
+	log.Printf("genNonce: %x\n", nonce)
 	return nonce
 }
 
@@ -61,6 +63,7 @@ func incrementNonce(nonce [nonceSize]byte) [nonceSize]byte {
 			break
 		}
 	}
+	log.Printf("incr nonce: %x\n", nonce)
 	return nonce
 }
 
@@ -92,8 +95,8 @@ func (p *Protocol) Handshake(privateKey, publicKey [keySize]byte, allowedKeys ..
 	var peerKey [keySize]byte
 	copy(peerKey[:], data)
 	p.peerKey = peerKey
-	fmt.Println("PRIVATE KEY:", privateKey)
-	fmt.Println("PEER KEY:", peerKey)
+	fmt.Printf("PRIVATE KEY: %x\n", privateKey)
+	fmt.Printf("PEER KEY: %x\n", peerKey)
 
 	// verify that this is a key we allow
 	allow := false
@@ -109,10 +112,10 @@ func (p *Protocol) Handshake(privateKey, publicKey [keySize]byte, allowedKeys ..
 
 	// compute a shared key we can use for the rest of the session
 	box.Precompute(&p.sharedKey, &peerKey, &privateKey)
-	fmt.Println("SHARED KEY:", p.sharedKey)
+	fmt.Printf("SHARED KEY: %x\n", p.sharedKey)
 
 	// now to prevent replay attacks we trade session tokens
-	token := []byte(uuid.NewUUID())
+	token := []byte(uuid.New().String())
 	err = p.Write(token)
 	if err != nil {
 		return err
@@ -152,15 +155,17 @@ func (p *Protocol) ReadRaw() ([]byte, error) {
 	}
 	if p.peerNonce == zeroNonce {
 		p.peerNonce = msg.Nonce
+		log.Printf("peerNonce is zeroNonce\n")
 	} else {
 		p.peerNonce = incrementNonce(p.peerNonce)
+		log.Printf("peerNonce is: %x, going to increment\n", p.peerNonce)
 	}
 
 	if !bytes.Equal(msg.Nonce[:], p.peerNonce[:]) {
 		return nil, fmt.Errorf("invalid nonce")
 	}
 
-	fmt.Println("READ RAW", msg.Data)
+	fmt.Printf("READ RAW: %x\n", msg.Data)
 
 	return msg.Data, nil
 }
@@ -174,10 +179,10 @@ func (p *Protocol) Read() ([]byte, error) {
 
 	unsealed, ok := box.Open(nil, sealed, &p.peerNonce, &p.peerKey, &p.privateKey)
 	if !ok {
-		return nil, fmt.Errorf("error decrypting message")
+		return nil, fmt.Errorf("error decrypting message, nonce: %x\n", p.peerNonce)
 	}
 
-	fmt.Println("READ", unsealed)
+	fmt.Printf("READ: %x\n", unsealed)
 
 	return unsealed, nil
 }
@@ -190,7 +195,7 @@ func (p *Protocol) WriteRaw(data []byte) error {
 		p.myNonce = incrementNonce(p.myNonce)
 	}
 
-	fmt.Println("WRITE RAW", data)
+	fmt.Printf("WRITE RAW: %x\n", data)
 
 	return p.writer.WriteMessage(Message{
 		Nonce: p.myNonce,
@@ -208,7 +213,7 @@ func (p *Protocol) Write(unsealed []byte) error {
 
 	sealed := box.Seal(nil, unsealed, &p.myNonce, &p.peerKey, &p.sharedKey)
 
-	fmt.Println("WRITE", sealed)
+	fmt.Printf("WRITE: %x\nnonce used: %x\n", sealed, p.myNonce)
 
 	return p.writer.WriteMessage(Message{
 		Nonce: p.myNonce,
